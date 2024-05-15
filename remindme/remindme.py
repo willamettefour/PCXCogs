@@ -1,17 +1,16 @@
 """RemindMe cog for Red-DiscordBot ported and enhanced by PhasecoreX."""
-
 import asyncio
 import datetime
-import logging
-from abc import ABC
-from typing import Any, ClassVar
-
 import discord
+import logging
+
+from abc import ABC
 from dateutil.relativedelta import relativedelta
 from pyparsing import ParseException
 from redbot.core import Config, commands
 from redbot.core.bot import Red
 from redbot.core.utils.chat_formatting import humanize_list
+from typing import Any, ClassVar
 
 from .c_reminder import ReminderCommands
 from .c_remindmeset import RemindMeSetCommands
@@ -34,7 +33,7 @@ class RemindMe(
     """Never forget anything anymore."""
 
     __author__ = "PhasecoreX"
-    __version__ = "3.1.0"
+    __version__ = "3.1.0b" # based off of remindme commit 2389b05
 
     default_global_settings: ClassVar[dict[str, int]] = {
         "schema_version": 0,
@@ -118,14 +117,7 @@ class RemindMe(
             user_reminder_ids = {}
             for reminder in current_reminders:
                 user_reminder_id = user_reminder_ids.get(reminder["ID"], 1)
-                new_reminder = {
-                    "USER_REMINDER_ID": user_reminder_id,
-                    "USER_ID": reminder["ID"],
-                    "REMINDER": reminder["TEXT"],
-                    "FUTURE": reminder["FUTURE"],
-                    "FUTURE_TEXT": reminder["FUTURE_TEXT"],
-                    "JUMP_LINK": None,
-                }
+                new_reminder = {"USER_REMINDER_ID": user_reminder_id, "USER_ID": reminder["ID"], "REMINDER": reminder["TEXT"], "FUTURE": reminder["FUTURE"], "FUTURE_TEXT": reminder["FUTURE_TEXT"], "JUMP_LINK": None}
                 user_reminder_ids[reminder["ID"]] = user_reminder_id + 1
                 new_reminders.append(new_reminder)
             schema_1_migration_reminders = new_reminders
@@ -139,47 +131,29 @@ class RemindMe(
             for reminder in current_reminders:
                 # Get normalized expires datetime
                 try:
-                    expires_normalized = datetime.datetime.fromtimestamp(
-                        reminder["FUTURE"], datetime.UTC
-                    )
+                    expires_normalized = datetime.datetime.fromtimestamp(reminder["FUTURE"], datetime.UTC)
                 except (OverflowError, ValueError):
-                    expires_normalized = datetime.datetime(
-                        datetime.MAXYEAR, 12, 31, 23, 59, 59, 0, tzinfo=datetime.UTC
-                    )
+                    expires_normalized = datetime.datetime(datetime.MAXYEAR, 12, 31, 23, 59, 59, 0, tzinfo=datetime.UTC)
                 # Try and convert the future text over to an actual point in time
                 created_converted = expires_normalized - relativedelta(seconds=1)
                 log.debug(
                     "Converting to relativedelta object: %s", reminder["FUTURE_TEXT"]
                 )
                 try:
-                    parse_result = self.reminder_parser.parse(
-                        reminder["FUTURE_TEXT"].strip()
-                    )
+                    parse_result = self.reminder_parser.parse(reminder["FUTURE_TEXT"].strip())
                     in_dict = parse_result["in"]
                     in_delta = relativedelta(**in_dict)
                     created_converted = expires_normalized - in_delta
-                    log.debug(
-                        "Successfully converted to relativedelta object: %s",
-                        self.humanize_relativedelta(in_delta),
-                    )
+                    log.debug("Successfully converted to relativedelta object: %s", self.humanize_relativedelta(in_delta))
                 except (OverflowError, ParseException, ValueError, TypeError):
-                    log.warning(
-                        'Failed to convert to datetime object for migration: %s, using "1 second" ago as created time',
-                        reminder["FUTURE_TEXT"],
-                    )
+                    log.warning('Failed to convert to datetime object for migration: %s, using "1 second" ago as created time', reminder["FUTURE_TEXT"])
                 # Required fields
-                new_reminder = {
-                    "text": reminder["REMINDER"],
-                    "created": int(created_converted.timestamp()),
-                    "expires": int(expires_normalized.timestamp()),
-                }
+                new_reminder = {"text": reminder["REMINDER"], "created": int(created_converted.timestamp()), "expires": int(expires_normalized.timestamp())}
                 # Optional fields
                 if reminder.get("JUMP_LINK"):
                     new_reminder["jump_link"] = reminder["JUMP_LINK"]
                 if reminder.get("REPEAT"):
-                    new_reminder["repeat"] = self.relativedelta_to_dict(
-                        relativedelta(seconds=reminder["REPEAT"])
-                    )
+                    new_reminder["repeat"] = self.relativedelta_to_dict(relativedelta(seconds=reminder["REPEAT"]))
                 # Save config
                 await self.config.custom(
                     "REMINDER",
@@ -194,15 +168,11 @@ class RemindMe(
     #
 
     @commands.Cog.listener()
-    async def on_raw_reaction_add(
-        self, payload: discord.raw_models.RawReactionActionEvent
-    ) -> None:
+    async def on_raw_reaction_add(self, payload: discord.raw_models.RawReactionActionEvent) -> None:
         """Watches for bell reactions on reminder messages."""
         if str(payload.emoji) != self.reminder_emoji:
             return
-        if not payload.guild_id or await self.bot.cog_disabled_in_guild_raw(
-            self.qualified_name, payload.guild_id
-        ):
+        if not payload.guild_id or await self.bot.cog_disabled_in_guild_raw(self.qualified_name, payload.guild_id):
             return
         guild = self.bot.get_guild(payload.guild_id)
         if not guild:
@@ -270,7 +240,6 @@ class RemindMe(
                 )
                 self.background_tasks.add(task)
                 task.add_done_callback(self.background_tasks.discard)
-
         self.bg_loop_task = self.bot.loop.create_task(self._bg_loop())
         self.bg_loop_task.add_done_callback(error_handler)
 
@@ -341,9 +310,7 @@ class RemindMe(
                     )
                 elif self.sent_retry_warning and not self.problematic_reminders:
                     self.sent_retry_warning = False
-                    await self.bot.send_to_owners(
-                        "Seems like I was able to send all of the backlogged reminders!"
-                    )
+                    await self.bot.send_to_owners("Seems like I was able to send all of the backlogged reminders!")
 
                 if self.next_reminder_to_send:
                     log.debug(
@@ -391,12 +358,7 @@ class RemindMe(
                 delete = True
             except discord.HTTPException as http_exception:
                 # Something weird happened: retry next time
-                log.warning(
-                    "HTTP exception when trying to send reminder for user=%d, id=%d:\n%s",
-                    full_reminder["user_id"],
-                    full_reminder["user_reminder_id"],
-                    str(http_exception),
-                )
+                log.warning("HTTP exception when trying to send reminder for user=%d, id=%d:\n%s", full_reminder["user_id"], full_reminder["user_reminder_id"], str(http_exception))
                 self.problematic_reminders.append(full_reminder)
                 return
             else:
@@ -404,25 +366,17 @@ class RemindMe(
                 await self.config.total_sent.set(total_sent + 1)
 
         # Get the config for editing
-        config_reminder = self.config.custom(
-            "REMINDER",
-            str(full_reminder["user_id"]),
-            str(full_reminder["user_reminder_id"]),
-        )
+        config_reminder = self.config.custom("REMINDER", str(full_reminder["user_id"]), str(full_reminder["user_reminder_id"]))
 
         # Handle repeats and deletes
         if not delete and full_reminder["repeat"]:
             # Make sure repeat interval is at least a day
             now = datetime.datetime.now(datetime.UTC)
-            if now + relativedelta(**full_reminder["repeat"]) < now + relativedelta(
-                days=1
-            ):
+            if now + relativedelta(**full_reminder["repeat"]) < now + relativedelta(days=1):
                 full_reminder["repeat"] = {"days": 1}
                 await config_reminder.repeat.set(full_reminder["repeat"])
             # Calculate next reminder
-            next_reminder_time = datetime.datetime.fromtimestamp(
-                full_reminder["expires"], datetime.UTC
-            )
+            next_reminder_time = datetime.datetime.fromtimestamp(full_reminder["expires"], datetime.UTC)
             repeat_time = relativedelta(**full_reminder["repeat"])
             try:
                 while next_reminder_time < now:
@@ -545,15 +499,7 @@ class RemindMe(
         """Convert relativedelta (or a dict of its keyword arguments) into a humanized string."""
         if isinstance(relative_delta, dict):
             relative_delta = relativedelta(**relative_delta)
-        periods = [
-            ("year", "years", relative_delta.years),
-            ("month", "months", relative_delta.months),
-            ("week", "weeks", relative_delta.weeks),
-            ("day", "days", relative_delta.days % 7),
-            ("hour", "hours", relative_delta.hours),
-            ("minute", "minutes", relative_delta.minutes),
-            ("second", "seconds", relative_delta.seconds),
-        ]
+        periods = [("year", "years", relative_delta.years), ("month", "months", relative_delta.months), ("week", "weeks", relative_delta.weeks), ("day", "days", relative_delta.days % 7), ("hour", "hours", relative_delta.hours), ("minute", "minutes", relative_delta.minutes), ("second", "seconds", relative_delta.seconds),]
 
         strings = []
         for period_name, plural_period_name, time_unit in periods:
@@ -574,9 +520,7 @@ class RemindMe(
         """
         # Check that the user has room for another reminder
         maximum = await self.config.max_user_reminders()
-        users_partial_reminders = await self.config.custom(
-            "REMINDER", str(user_id)
-        ).all()  # Does NOT return default values
+        users_partial_reminders = await self.config.custom("REMINDER", str(user_id)).all()  # Does NOT return default values
         if len(users_partial_reminders) > maximum - 1:
             return False
 
@@ -586,9 +530,7 @@ class RemindMe(
             next_reminder_id += 1
 
         # Save new reminder
-        await self.config.custom("REMINDER", str(user_id), str(next_reminder_id)).set(
-            reminder
-        )
+        await self.config.custom("REMINDER", str(user_id), str(next_reminder_id)).set(reminder)
 
         # Update background task
         await self.update_bg_task(user_id, next_reminder_id, reminder)
@@ -597,14 +539,7 @@ class RemindMe(
     @staticmethod
     def relativedelta_to_dict(relative_delta: relativedelta) -> dict[str, int]:
         """Convert a relativedelta to a dict representation (for storing)."""
-        periods: list[tuple[str, int]] = [
-            ("years", relative_delta.years),
-            ("months", relative_delta.months),
-            ("days", relative_delta.days),
-            ("hours", relative_delta.hours),
-            ("minutes", relative_delta.minutes),
-            ("seconds", relative_delta.seconds),
-        ]
+        periods: list[tuple[str, int]] = [("years", relative_delta.years), ("months", relative_delta.months), ("days", relative_delta.days), ("hours", relative_delta.hours), ("minutes", relative_delta.minutes), ("seconds", relative_delta.seconds)]
         result: dict[str, int] = {}
         for key, value in periods:
             if value == 0:
@@ -630,12 +565,7 @@ class RemindMe(
         else:
             await ctx_or_user.send(message)
 
-    async def update_bg_task(
-        self,
-        user_id: int,
-        user_reminder_id: int | None = None,
-        partial_reminder: dict | None = None,
-    ) -> None:
+    async def update_bg_task(self, user_id: int, user_reminder_id: int | None = None, partial_reminder: dict | None = None) -> None:
         """Request the background task to consider a new (or updated) reminder.
 
         user_id is always required, user_reminder_id and partial_reminder are usually required,
