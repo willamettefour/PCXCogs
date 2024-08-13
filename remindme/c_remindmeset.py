@@ -1,13 +1,10 @@
 """Commands for [p]remindmeset."""
-
 from abc import ABC
-
 from redbot.core import checks, commands
 from redbot.core.utils.chat_formatting import success
 
 from .abc import MixinMeta
 from .pcx_lib import SettingDisplay
-
 
 class RemindMeSetCommands(MixinMeta, ABC):
     """Commands for [p]remindmeset."""
@@ -33,9 +30,7 @@ class RemindMeSetCommands(MixinMeta, ABC):
 
         if await ctx.bot.is_owner(ctx.author):
             global_section = SettingDisplay("Global Settings")
-            global_section.add(
-                "Maximum reminders per user", await self.config.max_user_reminders()
-            )
+            global_section.add("Maximum reminders per user", await self.config.max_user_reminders())
 
             non_repeating_reminders = 0
             repeating_reminders = 0
@@ -48,9 +43,7 @@ class RemindMeSetCommands(MixinMeta, ABC):
                         repeating_reminders += 1
                     else:
                         non_repeating_reminders += 1
-            pending_reminders_message = (
-                f"{non_repeating_reminders + repeating_reminders}"
-            )
+            pending_reminders_message = (f"{non_repeating_reminders + repeating_reminders}")
             if repeating_reminders:
                 pending_reminders_message += (
                     f" ({repeating_reminders} "
@@ -58,10 +51,7 @@ class RemindMeSetCommands(MixinMeta, ABC):
                 )
 
             stats_section = SettingDisplay("Stats")
-            stats_section.add(
-                "Pending reminders",
-                pending_reminders_message,
-            )
+            stats_section.add("Pending reminders", pending_reminders_message)
             stats_section.add("Total reminders sent", await self.config.total_sent())
 
             await ctx.send(server_section.display(global_section, stats_section))
@@ -80,19 +70,11 @@ class RemindMeSetCommands(MixinMeta, ABC):
             return
         me_too = not await self.config.guild(ctx.guild).me_too()
         await self.config.guild(ctx.guild).me_too.set(me_too)
-        await ctx.send(
-            success(
-                f"I will {'now' if me_too else 'no longer'} ask if others want to be reminded."
-            )
-        )
+        await ctx.send(success(f"I will {'now' if me_too else 'no longer'} ask if others want to be reminded."))
 
     @remindmeset.command(name="max")
     @checks.is_owner()
     async def set_max(self, ctx: commands.Context, maximum: int) -> None:
         """Global: Set the maximum number of reminders a user can create at one time."""
         await self.config.max_user_reminders.set(maximum)
-        await ctx.send(
-            success(
-                f"Maximum reminders per user is now set to {await self.config.max_user_reminders()}"
-            )
-        )
+        await ctx.send(success(f"Maximum reminders per user is now set to {await self.config.max_user_reminders()}"))
