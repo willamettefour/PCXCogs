@@ -1,13 +1,11 @@
 """ABC for the RemindMe Cog."""
+import discord
 
 from abc import ABC, abstractmethod
-
-import discord
 from dateutil.relativedelta import relativedelta
 from redbot.core import Config, commands
 
 from .reminder_parse import ReminderParser
-
 
 class MixinMeta(ABC):
     """Base class for well-behaved type hint detection with composite class.
@@ -29,24 +27,17 @@ class MixinMeta(ABC):
 
     @abstractmethod
     async def insert_reminder(self, user_id: int, reminder: dict) -> bool:
-        raise NotImplementedError
+        raise NotImplementedError()
 
     @staticmethod
     @abstractmethod
     def relativedelta_to_dict(relative_delta: relativedelta) -> dict[str, int]:
+        raise NotImplementedError()
+
+    @abstractmethod
+    async def send_too_many_message(self, ctx_or_user: commands.Context | discord.User, maximum: int = -1) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    async def send_too_many_message(
-        self, ctx_or_user: commands.Context | discord.User, maximum: int = -1
-    ) -> None:
-        raise NotImplementedError
-
-    @abstractmethod
-    async def update_bg_task(
-        self,
-        user_id: int,
-        user_reminder_id: int | None = None,
-        partial_reminder: dict | None = None,
-    ) -> None:
+    async def update_bg_task(self, user_id: int, user_reminder_id: int | None = None, partial_reminder: dict | None = None) -> None:
         raise NotImplementedError

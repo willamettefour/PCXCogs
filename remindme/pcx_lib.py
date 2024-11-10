@@ -1,15 +1,15 @@
 """Shared code across multiple cogs."""
-
 import asyncio
+import discord
+
 from collections.abc import Mapping
 from contextlib import suppress
-from typing import Any
-
-import discord
+from reactionmenu import ViewMenu, ViewButton
 from redbot.core import __version__ as redbot_version
 from redbot.core import commands
 from redbot.core.utils import common_filters
 from redbot.core.utils.chat_formatting import box
+from typing import Any
 
 headers = {"user-agent": "Red-DiscordBot/" + redbot_version}
 
@@ -50,10 +50,7 @@ async def reply(
             with suppress(discord.HTTPException):
                 await ctx.reply(content=content, **kwargs)
                 return
-        allowed_mentions = kwargs.pop(
-            "allowed_mentions",
-            discord.AllowedMentions(users=False),
-        )
+        allowed_mentions = kwargs.pop("allowed_mentions", discord.AllowedMentions(users=False))
         kwargs.update(allowed_mentions=allowed_mentions)
         await ctx.send(content=f"{ctx.message.author.mention} {content}", **kwargs)
     else:
@@ -75,9 +72,7 @@ async def type_message(
         return await destination.send(content=content, **kwargs)
 
 
-async def embed_splitter(
-    embed: discord.Embed, destination: discord.abc.Messageable | None = None
-) -> list[discord.Embed]:
+async def embed_splitter(ctx, embed: discord.Embed, destination: discord.abc.Messageable | None = None) -> list[discord.Embed]:
     """Take an embed and split it so that each embed has at most 20 fields and a length of 5900.
 
     Each field value will also be checked to have a length no greater than 1024.
@@ -95,14 +90,11 @@ async def embed_splitter(
                 modified = True
     if modified:
         embed = discord.Embed.from_dict(embed_dict)
-
     # Short circuit
     if len(embed) <= MAX_EMBED_SIZE and (
         "fields" not in embed_dict or len(embed_dict["fields"]) <= MAX_EMBED_FIELDS
     ):
-        if destination:
-            await destination.send(embed=embed)
-        return [embed]
+        return await ctx.send(embed=embed)
 
     # Nah, we're really doing this
     split_embeds: list[discord.Embed] = []
@@ -123,11 +115,23 @@ async def embed_splitter(
 
     current_embed = discord.Embed.from_dict(embed_dict)
     split_embeds.append(current_embed.copy())
-
-    if destination:
-        for split_embed in split_embeds:
-            await destination.send(embed=split_embed)
-    return split_embeds
+    menu = ViewMenu(ctx, style='page $/&', menu_type=ViewMenu.TypeEmbed)
+    if len(split_embeds) > 2:
+        fpb = ViewButton(style=discord.ButtonStyle.primary, emoji='⏪', label='First', custom_id=ViewButton.ID_GO_TO_FIRST_PAGE)
+        menu.add_button(fpb)
+    back_button = ViewButton(style=discord.ButtonStyle.primary, emoji='◀️', label='Back', custom_id=ViewButton.ID_PREVIOUS_PAGE)
+    menu.add_button(back_button)
+    if len(split_embeds) > 2:
+        gtpb = ViewButton(style=discord.ButtonStyle.primary, emoji='🔢', label='Menu' ,custom_id=ViewButton.ID_GO_TO_PAGE)
+        menu.add_button(gtpb)
+    next_button = ViewButton(style=discord.ButtonStyle.primary, emoji='▶️', label='Next', custom_id=ViewButton.ID_NEXT_PAGE)
+    menu.add_button(next_button)
+    if len(split_embeds) > 2:
+        lpb = ViewButton(style=discord.ButtonStyle.primary, emoji='⏩', label='Last', custom_id=ViewButton.ID_GO_TO_LAST_PAGE)
+        menu.add_button(lpb)
+    for embed in split_embeds:
+        menu.add_page(embed)
+    await menu.start()
 
 
 class SettingDisplay:

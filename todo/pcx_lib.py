@@ -1,22 +1,18 @@
 """Shared code across multiple cogs."""
-
-import asyncio
-from collections.abc import Mapping
-from contextlib import suppress
-from typing import Any
-
 import discord
+
+from reactionmenu import ViewMenu, ViewButton
 from redbot.core import __version__ as redbot_version
 from redbot.core import commands
 from redbot.core.utils import common_filters
 from redbot.core.utils.chat_formatting import box
+from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
 
 headers = {"user-agent": "Red-DiscordBot/" + redbot_version}
 
-MAX_EMBED_SIZE = 5900
-MAX_EMBED_FIELDS = 20
-MAX_EMBED_FIELD_SIZE = 1024
-
+def checkmark(text: str) -> str:
+    """Get text prefixed with a checkmark emoji."""
+    return f"\N{WHITE HEAVY CHECK MARK} {text}"
 
 async def delete(message: discord.Message, *, delay: float | None = None) -> bool:
     """Attempt to delete a message.
@@ -31,53 +27,7 @@ async def delete(message: discord.Message, *, delay: float | None = None) -> boo
         return False
     return True
 
-
-async def reply(
-    ctx: commands.Context, content: str | None = None, **kwargs: Any  # noqa: ANN401
-) -> None:
-    """Safely reply to a command message.
-
-    If the command is in a guild, will reply, otherwise will send a message like normal.
-    Pre discord.py 1.6, replies are just messages sent with the users mention prepended.
-    """
-    if ctx.guild:
-        if (
-            hasattr(ctx, "reply")
-            and ctx.channel.permissions_for(ctx.guild.me).read_message_history
-        ):
-            mention_author = kwargs.pop("mention_author", False)
-            kwargs.update(mention_author=mention_author)
-            with suppress(discord.HTTPException):
-                await ctx.reply(content=content, **kwargs)
-                return
-        allowed_mentions = kwargs.pop(
-            "allowed_mentions",
-            discord.AllowedMentions(users=False),
-        )
-        kwargs.update(allowed_mentions=allowed_mentions)
-        await ctx.send(content=f"{ctx.message.author.mention} {content}", **kwargs)
-    else:
-        await ctx.send(content=content, **kwargs)
-
-
-async def type_message(
-    destination: discord.abc.Messageable, content: str, **kwargs: Any  # noqa: ANN401
-) -> discord.Message | None:
-    """Simulate typing and sending a message to a destination.
-
-    Will send a typing indicator, wait a variable amount of time based on the length
-    of the text (to simulate typing speed), then send the message.
-    """
-    content = common_filters.filter_urls(content)
-    with suppress(discord.HTTPException):
-        async with destination.typing():
-            await asyncio.sleep(max(0.25, min(2.5, len(content) * 0.01)))
-        return await destination.send(content=content, **kwargs)
-
-
-async def embed_splitter(
-    embed: discord.Embed, destination: discord.abc.Messageable | None = None
-) -> list[discord.Embed]:
+async def embed_splitter(ctx, embed: discord.Embed) -> list[discord.Embed]:
     """Take an embed and split it so that each embed has at most 20 fields and a length of 5900.
 
     Each field value will also be checked to have a length no greater than 1024.
@@ -90,32 +40,25 @@ async def embed_splitter(
     modified = False
     if "fields" in embed_dict:
         for field in embed_dict["fields"]:
-            if len(field["value"]) > MAX_EMBED_FIELD_SIZE:
-                field["value"] = field["value"][: MAX_EMBED_FIELD_SIZE - 3] + "..."
+            if len(field["value"]) > 1024:
+                field["value"] = field["value"][:1021] + "..."
                 modified = True
     if modified:
         embed = discord.Embed.from_dict(embed_dict)
 
     # Short circuit
-    if len(embed) <= MAX_EMBED_SIZE and (
-        "fields" not in embed_dict or len(embed_dict["fields"]) <= MAX_EMBED_FIELDS
-    ):
-        if destination:
-            await destination.send(embed=embed)
-        return [embed]
+    if len(embed) < 5901 and ("fields" not in embed_dict or len(embed_dict["fields"]) < 21):
+        return await ctx.send(embed=embed)
 
-    # Nah, we're really doing this
+    # Nah we really doing this
     split_embeds: list[discord.Embed] = []
-    fields = embed_dict.get("fields", [])
+    fields = embed_dict["fields"] if "fields" in embed_dict else []
     embed_dict["fields"] = []
 
     for field in fields:
         embed_dict["fields"].append(field)
         current_embed = discord.Embed.from_dict(embed_dict)
-        if (
-            len(current_embed) > MAX_EMBED_SIZE
-            or len(embed_dict["fields"]) > MAX_EMBED_FIELDS
-        ):
+        if len(current_embed) > 5900 or len(embed_dict["fields"]) > 20:
             embed_dict["fields"].pop()
             current_embed = discord.Embed.from_dict(embed_dict)
             split_embeds.append(current_embed.copy())
@@ -123,17 +66,28 @@ async def embed_splitter(
 
     current_embed = discord.Embed.from_dict(embed_dict)
     split_embeds.append(current_embed.copy())
-
-    if destination:
-        for split_embed in split_embeds:
-            await destination.send(embed=split_embed)
-    return split_embeds
-
+    menu = ViewMenu(ctx, style='page $/&', menu_type=ViewMenu.TypeEmbed)
+    if len(split_embeds) > 2:
+        fpb = ViewButton(style=discord.ButtonStyle.primary, emoji='⏪', label='First', custom_id=ViewButton.ID_GO_TO_FIRST_PAGE)
+        menu.add_button(fpb)
+    back_button = ViewButton(style=discord.ButtonStyle.primary, emoji='◀️', label='Back', custom_id=ViewButton.ID_PREVIOUS_PAGE)
+    menu.add_button(back_button)
+    if len(split_embeds) > 2:
+        gtpb = ViewButton(style=discord.ButtonStyle.primary, emoji='🔢', label='Menu' ,custom_id=ViewButton.ID_GO_TO_PAGE)
+        menu.add_button(gtpb)
+    next_button = ViewButton(style=discord.ButtonStyle.primary, emoji='▶️', label='Next', custom_id=ViewButton.ID_NEXT_PAGE)
+    menu.add_button(next_button)
+    if len(split_embeds) > 2:
+        lpb = ViewButton(style=discord.ButtonStyle.primary, emoji='⏩', label='Last', custom_id=ViewButton.ID_GO_TO_LAST_PAGE)
+        menu.add_button(lpb)
+    for embed in split_embeds:
+        menu.add_page(embed)
+    await menu.start()
 
 class SettingDisplay:
     """A formatted list of settings."""
 
-    def __init__(self, header: str | None = None) -> None:
+    def __init__(self, header: Optional[str] = None) -> None:
         """Init."""
         self.header = header
         self._length = 0
@@ -170,33 +124,13 @@ class SettingDisplay:
         """Generate a ready-to-send formatted box of settings."""
         return self.display()
 
-    def __len__(self) -> int:
-        """Count of how many settings there are to display."""
-        return len(self._settings)
-
-
 class Perms:
     """Helper class for dealing with a dictionary of discord.PermissionOverwrite."""
 
-    def __init__(
-        self,
-        overwrites: (
-            dict[
-                discord.Role | discord.Member | discord.Object,
-                discord.PermissionOverwrite,
-            ]
-            | None
-        ) = None,
-    ) -> None:
+    def __init__(self, overwrites: dict[discord.Role | discord.Member | discord.Object, discord.PermissionOverwrite] | None = None) -> None:
         """Init."""
-        self.__overwrites: dict[
-            discord.Role | discord.Member,
-            discord.PermissionOverwrite,
-        ] = {}
-        self.__original: dict[
-            discord.Role | discord.Member,
-            discord.PermissionOverwrite,
-        ] = {}
+        self.__overwrites: dict[discord.Role | discord.Member, discord.PermissionOverwrite] = {}
+        self.__original: dict[discord.Role | discord.Member, discord.PermissionOverwrite] = {}
         if overwrites:
             for key, value in overwrites.items():
                 if isinstance(key, discord.Role | discord.Member):
@@ -208,30 +142,14 @@ class Perms:
                         *pair
                     )
 
-    def overwrite(
-        self,
-        target: discord.Role | discord.Member | discord.Object,
-        permission_overwrite: Mapping[str, bool | None] | discord.PermissionOverwrite,
-    ) -> None:
+    def overwrite(self, target: discord.Role | discord.Member | discord.Object, permission_overwrite: discord.PermissionOverwrite) -> None:
         """Set the permissions for a target."""
-        if not isinstance(target, discord.Role | discord.Member):
-            return
-        if isinstance(permission_overwrite, discord.PermissionOverwrite):
-            if permission_overwrite.is_empty():
-                self.__overwrites[target] = discord.PermissionOverwrite()
-                return
+        if not permission_overwrite.is_empty() and isinstance(target, discord.Role | discord.Member):
             self.__overwrites[target] = discord.PermissionOverwrite().from_pair(
                 *permission_overwrite.pair()
             )
-        else:
-            self.__overwrites[target] = discord.PermissionOverwrite()
-            self.update(target, permission_overwrite)
 
-    def update(
-        self,
-        target: discord.Role | discord.Member,
-        perm: Mapping[str, bool | None],
-    ) -> None:
+    def update(self, target: Union[discord.Role, discord.Member], perm: Mapping[str, Optional[bool]]) -> None:
         """Update the permissions for a target."""
         if target not in self.__overwrites:
             self.__overwrites[target] = discord.PermissionOverwrite()
@@ -245,8 +163,6 @@ class Perms:
         return self.__overwrites != self.__original
 
     @property
-    def overwrites(
-        self,
-    ) -> dict[discord.Role | discord.Member, discord.PermissionOverwrite] | None:
+    def overwrites(self) -> Optional[dict[Union[discord.Role, discord.Member], discord.PermissionOverwrite]]:
         """Get current overwrites."""
         return self.__overwrites
