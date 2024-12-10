@@ -1,22 +1,20 @@
 """Commands for the average user."""
-
 import asyncio
+import discord
 import datetime
+
 from abc import ABC
 from contextlib import suppress
-from typing import Any
-
-import discord
 from dateutil.relativedelta import relativedelta
 from pyparsing import ParseException
 from redbot.core import commands
 from redbot.core.config import Group
 from redbot.core.utils.chat_formatting import error
 from redbot.core.utils.predicates import MessagePredicate
+from typing import Any, Optional
 
 from .abc import MixinMeta
 from .pcx_lib import delete, embed_splitter, reply
-
 
 class ReminderCommands(MixinMeta, ABC):
     """Commands for the average user."""
@@ -37,9 +35,7 @@ class ReminderCommands(MixinMeta, ABC):
         # Grab users reminders and format them so that we can see the user_reminder_id
         author = ctx.message.author
         user_reminders = []
-        user_reminders_dict = await self.config.custom(
-            "REMINDER", str(author.id)
-        ).all()  # Does NOT return default values
+        user_reminders_dict = await self.config.custom("REMINDER", str(author.id)).all()  # Does NOT return default values
         for user_reminder_id, reminder in user_reminders_dict.items():
             reminder.update({"user_reminder_id": int(user_reminder_id)})
             user_reminders.append(reminder)
@@ -55,39 +51,31 @@ class ReminderCommands(MixinMeta, ABC):
         elif sort == "added":
             pass
         elif sort == "id":
-            user_reminders.sort(
-                key=lambda reminder_info: reminder_info["user_reminder_id"]
-            )
+            user_reminders.sort(key=lambda reminder_info: reminder_info["user_reminder_id"])
         else:
-            await reply(
-                ctx,
-                "That is not a valid sorting option. Choose from `time` (default), `added`, or `id`.",
-            )
+            await reply(ctx, "That is not a valid sorting option. Choose from `time` (default), `added`, or `id`.")
             return
 
         # Make a pretty embed listing the reminders
-        embed = discord.Embed(
-            title=f"Reminders for {author.display_name}",
-            color=await ctx.embed_color(),
-        )
-        embed.set_thumbnail(url=author.display_avatar.url)
+        embed = discord.Embed(title=f"Reminders for {author.display_name}", color=await ctx.embed_color())
+        if author.avatar is None:
+            url = author.default_avatar
+        else:
+            url = str(author.avatar.replace(size=2048, static_format="webp")) 
+            if author.avatar.is_animated() is False:
+                url += "&quality=lossless"
+        embed.set_thumbnail(url=url)
         for reminder in user_reminders:
-            reminder_title = (
-                f"ID# {reminder['user_reminder_id']} — <t:{reminder['expires']}:f>"
-            )
+            reminder_title = (f"ID# {reminder['user_reminder_id']} — <t:{reminder['expires']}:f>")
             if reminder.get("repeat"):
                 reminder_title += f", repeating every {self.humanize_relativedelta(reminder['repeat'])}"
             reminder_text = reminder["text"]
             if reminder.get("jump_link"):
                 reminder_text += f"\n([original message]({reminder['jump_link']}))"
             reminder_text = reminder_text or "(no reminder text or jump link)"
-            embed.add_field(
-                name=reminder_title,
-                value=reminder_text,
-                inline=False,
-            )
+            embed.add_field(name=reminder_title, value=reminder_text, inline=False)
         try:
-            await embed_splitter(embed, author)
+            await embed_splitter(ctx, embed)
             if ctx.guild:
                 await ctx.tick()
         except discord.Forbidden:
@@ -110,9 +98,7 @@ class ReminderCommands(MixinMeta, ABC):
     @modify.command()
     async def time(self, ctx: commands.Context, reminder_id: int, *, time: str) -> None:
         """Modify the time of an existing reminder."""
-        config_reminder = await self._get_reminder_config_group(
-            ctx, ctx.message.author.id, reminder_id
-        )
+        config_reminder = await self._get_reminder_config_group(ctx, ctx.message.author.id, reminder_id)
         if not config_reminder:
             return
 
@@ -125,14 +111,10 @@ class ReminderCommands(MixinMeta, ABC):
         await config_reminder.created.set(parse_result["created_timestamp_int"])
         await config_reminder.expires.set(parse_result["expires_timestamp_int"])
         if parse_result["repeat_delta"]:
-            await config_reminder.repeat.set(
-                self.relativedelta_to_dict(parse_result["repeat_delta"])
-            )
+            await config_reminder.repeat.set(self.relativedelta_to_dict(parse_result["repeat_delta"]))
 
         # Notify background task
-        await self.update_bg_task(
-            ctx.message.author.id, reminder_id, await config_reminder.all()
-        )
+        await self.update_bg_task(ctx.message.author.id, reminder_id, await config_reminder.all())
 
         # Pull repeat dict from config in case we didn't update it
         repeat_dict = await config_reminder.repeat()
@@ -145,13 +127,9 @@ class ReminderCommands(MixinMeta, ABC):
         await reply(ctx, message)
 
     @modify.command()
-    async def repeat(
-        self, ctx: commands.Context, reminder_id: int, *, time: str
-    ) -> None:
+    async def repeat(self, ctx: commands.Context, reminder_id: int, *, time: str) -> None:
         """Modify the repeating time of an existing reminder. Pass "0" to <time> in order to disable repeating."""
-        config_reminder = await self._get_reminder_config_group(
-            ctx, ctx.message.author.id, reminder_id
-        )
+        config_reminder = await self._get_reminder_config_group(ctx, ctx.message.author.id, reminder_id)
         if not config_reminder:
             return
 
@@ -170,9 +148,7 @@ class ReminderCommands(MixinMeta, ABC):
                 return
 
             # Save new value
-            await config_reminder.repeat.set(
-                self.relativedelta_to_dict(parse_result["expires_delta"])
-            )
+            await config_reminder.repeat.set(self.relativedelta_to_dict(parse_result["expires_delta"]))
 
             await reply(
                 ctx,
@@ -184,9 +160,7 @@ class ReminderCommands(MixinMeta, ABC):
     @modify.command()
     async def text(self, ctx: commands.Context, reminder_id: int, *, text: str) -> None:
         """Modify the text of an existing reminder."""
-        config_reminder = await self._get_reminder_config_group(
-            ctx, ctx.message.author.id, reminder_id
-        )
+        config_reminder = await self._get_reminder_config_group(ctx, ctx.message.author.id, reminder_id)
         if not config_reminder:
             return
 
@@ -196,10 +170,7 @@ class ReminderCommands(MixinMeta, ABC):
             return
 
         await config_reminder.text.set(text)
-        await reply(
-            ctx,
-            f"Reminder with ID# **{reminder_id}** has been edited successfully.",
-        )
+        await reply(ctx, f"Reminder with ID# **{reminder_id}** has been edited successfully.")
 
     @reminder.command(aliases=["delete", "del"])
     async def remove(self, ctx: commands.Context, index: str) -> None:
@@ -213,9 +184,7 @@ class ReminderCommands(MixinMeta, ABC):
         await self._delete_reminder(ctx, index)
 
     @commands.command()
-    async def remindme(
-        self, ctx: commands.Context, *, time_and_optional_text: str = ""
-    ) -> None:
+    async def remindme(self, ctx: commands.Context, *, time_and_optional_text: str = "") -> None:
         """Create a reminder with optional reminder text.
 
         Either of the following formats are allowed:
@@ -237,7 +206,6 @@ class ReminderCommands(MixinMeta, ABC):
         `[p]remindme 8h`
         `[p]remindme every 1 week to take out the trash`
         `[p]remindme in 1 hour to drink some water every 1 day`
-
         """
         await self._create_reminder(ctx, time_and_optional_text)
 
@@ -246,16 +214,12 @@ class ReminderCommands(MixinMeta, ABC):
         """Remove all of your upcoming reminders."""
         await self._delete_reminder(ctx, "all")
 
-    async def _create_reminder(
-        self, ctx: commands.Context, time_and_optional_text: str
-    ) -> None:
+    async def _create_reminder(self, ctx: commands.Context, time_and_optional_text: str) -> None:
         """Logic to create a reminder."""
         # Check that user is allowed to make a new reminder
         author = ctx.message.author
         maximum = await self.config.max_user_reminders()
-        users_reminders = await self.config.custom(
-            "REMINDER", str(author.id)
-        ).all()  # Does NOT return default values
+        users_reminders = await self.config.custom("REMINDER", str(author.id)).all()  # Does NOT return default values
         if len(users_reminders) > maximum - 1:
             await self.send_too_many_message(ctx, maximum)
             return
@@ -267,18 +231,11 @@ class ReminderCommands(MixinMeta, ABC):
             return
 
         # Create basic reminder
-        new_reminder = {
-            "text": parse_result["reminder_text"],
-            "created": parse_result["created_timestamp_int"],
-            "expires": parse_result["expires_timestamp_int"],
-            "jump_link": ctx.message.jump_url,
-        }
+        new_reminder = {"text": parse_result["reminder_text"], "created": parse_result["created_timestamp_int"], "expires": parse_result["expires_timestamp_int"], "jump_link": ctx.message.jump_url}
 
         # Check for repeating reminder
         if parse_result["repeat_delta"]:
-            new_reminder["repeat"] = self.relativedelta_to_dict(
-                parse_result["repeat_delta"]
-            )
+            new_reminder["repeat"] = self.relativedelta_to_dict(parse_result["repeat_delta"])
 
         # Save reminder for user (also handles notifying background task)
         if not await self.insert_reminder(author.id, new_reminder):
@@ -288,9 +245,7 @@ class ReminderCommands(MixinMeta, ABC):
         # Let user know we successfully saved their reminder
         message = f"I will remind you of {'that' if parse_result['reminder_text'] else 'this'} "
         if parse_result["repeat_delta"]:
-            message += (
-                f"every {self.humanize_relativedelta(parse_result['repeat_delta'])}"
-            )
+            message += (f"every {self.humanize_relativedelta(parse_result['repeat_delta'])}")
         else:
             message += f"in {self.humanize_relativedelta(parse_result['expires_delta'])} (<t:{parse_result['expires_timestamp_int']}:f>)"
         if (
@@ -334,10 +289,7 @@ class ReminderCommands(MixinMeta, ABC):
 
             # Ask if the user really wants to do this
             pred = MessagePredicate.yes_or_no(ctx)
-            await reply(
-                ctx,
-                "Are you **sure** you want to remove all of your reminders? (yes/no)",
-            )
+            await reply(ctx, "Are you **sure** you want to remove all of your reminders? (yes/no)")
             with suppress(asyncio.TimeoutError):
                 await ctx.bot.wait_for("message", check=pred, timeout=30)
             if pred.result:
@@ -352,23 +304,16 @@ class ReminderCommands(MixinMeta, ABC):
             return
 
         if index == "last":
-            all_users_reminders_dict = await self.config.custom(
-                "REMINDER", str(author.id)
-            ).all()
+            all_users_reminders_dict = await self.config.custom("REMINDER", str(author.id)).all()
             if not all_users_reminders_dict:
                 await reply(ctx, "You don't have any upcoming reminders.")
                 return
 
             reminder_id_to_delete = int(list(all_users_reminders_dict)[-1])
-            await self.config.custom(
-                "REMINDER", str(author.id), str(reminder_id_to_delete)
-            ).clear()
+            await self.config.custom("REMINDER", str(author.id), str(reminder_id_to_delete)).clear()
             # Notify background task
             await self.update_bg_task(author.id, reminder_id_to_delete)
-            await reply(
-                ctx,
-                f"Your most recently created reminder (ID# **{reminder_id_to_delete}**) has been removed.",
-            )
+            await reply(ctx, f"Your most recently created reminder (ID# **{reminder_id_to_delete}**) has been removed.")
             return
 
         try:
@@ -377,9 +322,7 @@ class ReminderCommands(MixinMeta, ABC):
             await ctx.send_help()
             return
 
-        config_reminder = await self._get_reminder_config_group(
-            ctx, author.id, int_index
-        )
+        config_reminder = await self._get_reminder_config_group(ctx, author.id, int_index)
         if not config_reminder:
             return
         await config_reminder.clear()
@@ -387,12 +330,8 @@ class ReminderCommands(MixinMeta, ABC):
         await self.update_bg_task(author.id, int_index)
         await reply(ctx, f"Reminder with ID# **{int_index}** has been removed.")
 
-    async def _get_reminder_config_group(
-        self, ctx: commands.Context, user_id: int, user_reminder_id: int
-    ) -> Group | None:
-        config_reminder = self.config.custom(
-            "REMINDER", str(user_id), str(user_reminder_id)
-        )
+    async def _get_reminder_config_group(self, ctx: commands.Context, user_id: int, user_reminder_id: int) -> Group | None:
+        config_reminder = self.config.custom("REMINDER", str(user_id), str(user_reminder_id))
         if not await config_reminder.expires():
             await reply(
                 ctx,
@@ -402,22 +341,11 @@ class ReminderCommands(MixinMeta, ABC):
             return None
         return config_reminder
 
-    async def _parse_time_text(
-        self,
-        ctx: commands.Context,
-        time_and_optional_text: str,
-        *,
-        validate_text: bool = True,
-    ) -> dict[str, Any] | None:
+    async def _parse_time_text(self, ctx: commands.Context, time_and_optional_text: str, *, validate_text: bool = True) -> dict[str, Any] | None:
         try:
             parse_result = self.reminder_parser.parse(time_and_optional_text.strip())
         except ParseException:
-            await reply(
-                ctx,
-                error(
-                    "I couldn't understand the format of your reminder time and text."
-                ),
-            )
+            await reply(ctx, error("I couldn't understand the format of your reminder time and text."))
             return None
 
         created_datetime = datetime.datetime.now(datetime.UTC)
@@ -429,9 +357,7 @@ class ReminderCommands(MixinMeta, ABC):
             repeat_delta = relativedelta(**repeat_dict)
             try:
                 # Make sure repeat isn't huge or less than 1 day
-                if created_datetime + repeat_delta < created_datetime + relativedelta(
-                    days=1
-                ):
+                if created_datetime + repeat_delta < created_datetime + relativedelta(days=1):
                     await reply(ctx, "Reminder repeat time must be at least 1 day.")
                     return None
             except (OverflowError, ValueError):
@@ -445,9 +371,7 @@ class ReminderCommands(MixinMeta, ABC):
         expires_delta = relativedelta(**expires_dict)
         try:
             # Make sure expire time isn't over 9999 years and is at least 1 minute
-            if created_datetime + expires_delta < created_datetime + relativedelta(
-                minutes=1
-            ):
+            if created_datetime + expires_delta < created_datetime + relativedelta(minutes=1):
                 await reply(ctx, "Reminder time must be at least 1 minute.")
                 return None
         except (OverflowError, ValueError):
